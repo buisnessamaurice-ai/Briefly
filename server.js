@@ -1,18 +1,28 @@
+import 'dotenv/config';
 import express from 'express';
-import Anthropic from '@anthropic-ai/sdk';
+import Groq from 'groq-sdk';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app  = express();
 const port = process.env.PORT || 3000;
 
+// ── Validate API key on startup ─────────────────────────────────────────────
+if (!process.env.GROQ_API_KEY) {
+  console.error('ERROR: GROQ_API_KEY is not set.');
+  console.error('  1. Sign up free at https://console.groq.com');
+  console.error('  2. Go to API Keys → Create API Key');
+  console.error('  3. Paste it into your .env file as GROQ_API_KEY=...');
+  process.exit(1);
+}
+
 // ── Middleware ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(__dirname));          // serves index.html, css/, js/
+app.use(express.static(__dirname));
 
-// ── Anthropic client (reads ANTHROPIC_API_KEY from environment) ─────────────
-const anthropic = new Anthropic();           // auto-reads process.env.ANTHROPIC_API_KEY
+// ── Groq client ─────────────────────────────────────────────────────────────
+const groq = new Groq();  // auto-reads GROQ_API_KEY from process.env
 
 // ── POST /api/summarize  (streaming) ────────────────────────────────────────
 app.post('/api/summarize', async (req, res) => {
@@ -22,26 +32,24 @@ app.post('/api/summarize', async (req, res) => {
     return res.status(400).json({ error: 'Missing or invalid "prompt" field.' });
   }
 
-  // Set SSE headers so the browser can read the stream
+  // SSE headers
   res.setHeader('Content-Type',  'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection',    'keep-alive');
   res.flushHeaders();
 
   try {
-    const stream = anthropic.messages.stream({
-      model:      'claude-sonnet-4-20250514',
+    const stream = await groq.chat.completions.create({
+      model:    'llama-3.3-70b-versatile',   // best free model on Groq
+      messages: [{ role: 'user', content: prompt }],
+      stream:   true,
       max_tokens: 1000,
-      messages:   [{ role: 'user', content: prompt }],
     });
 
     for await (const chunk of stream) {
-      if (
-        chunk.type === 'content_block_delta' &&
-        chunk.delta?.type === 'text_delta'
-      ) {
-        // Forward each text delta as an SSE event
-        res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`);
+      const text = chunk.choices[0]?.delta?.content;
+      if (text) {
+        res.write(`data: ${JSON.stringify({ text })}\n\n`);
       }
     }
 
@@ -49,7 +57,7 @@ app.post('/api/summarize', async (req, res) => {
     res.end();
 
   } catch (err) {
-    console.error('Anthropic API error:', err.message);
+    console.error('Groq API error:', err.message);
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
     res.end();
   }
