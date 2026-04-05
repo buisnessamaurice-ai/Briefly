@@ -1,19 +1,23 @@
 {
   "name": "briefly-nlp-summarizer",
-  "version": "1.0.0",
-  "description": "NLP-powered text and video summarizer using Groq AI (free tier)",
+  "version": "2.0.0",
+  "description": "NLP-powered summarizer — text, YouTube, PDF, video. Powered by Groq (free tier).",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev":   "node --watch server.js"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "groq-sdk": "^0.9.1"
+    "dotenv":             "^16.4.5",
+    "express":            "^4.19.2",
+    "groq-sdk":           "^0.9.1",
+    "multer":             "^1.4.5-lts.1",
+    "pdf-parse":          "^1.1.1",
+    "youtube-transcript": "^1.2.1"
   }
 }
+
