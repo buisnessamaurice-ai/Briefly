@@ -4,82 +4,178 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Briefly — NLP Summarizer</title>
-
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
 
+  <!-- History sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span>History</span>
+      <button class="sidebar-close" onclick="toggleHistory()">✕</button>
+    </div>
+    <div class="sidebar-list" id="sidebar-list"></div>
+    <button class="sidebar-clear" onclick="clearHistory()">Clear all</button>
+  </div>
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleHistory()"></div>
+
   <div class="app">
 
     <div class="header">
       <h1>Brief<em>ly</em></h1>
-      <p>Paste long text or upload a video — get an instant, intelligent recap</p>
+      <p>Paste text, drop a PDF, link a YouTube video — get an instant intelligent recap</p>
+      <button class="history-btn" onclick="toggleHistory()">⏱ History</button>
     </div>
 
+    <!-- Input tabs -->
     <div class="tabs">
-      <button class="tab-btn active" id="tab-text">
-        <span class="tab-icon">📝</span> Text input
-      </button>
-      <button class="tab-btn" id="tab-video">
-        <span class="tab-icon">🎬</span> Video file
-      </button>
+      <button class="tab-btn active" onclick="switchTab('text')"  id="tab-text">📝 Text</button>
+      <button class="tab-btn"        onclick="switchTab('youtube')" id="tab-youtube">▶ YouTube</button>
+      <button class="tab-btn"        onclick="switchTab('pdf')"   id="tab-pdf">📄 PDF</button>
+      <button class="tab-btn"        onclick="switchTab('video')" id="tab-video">🎬 Video</button>
     </div>
 
-    <!-- Text Panel -->
+    <!-- Text panel -->
     <div id="panel-text" class="panel active">
       <div class="input-card">
         <label>Paste your text</label>
-        <textarea id="text-input" placeholder="Paste text here…"></textarea>
-        <div class="char-count">
-          <span id="char-count">0</span> characters · <span id="word-count">0</span> words
+        <textarea id="text-input" placeholder="Paste an article, transcript, report, meeting notes…" oninput="updateCharCount()"></textarea>
+        <div class="char-count"><span id="char-count">0</span> characters · <span id="word-count">0</span> words</div>
+      </div>
+    </div>
+
+    <!-- YouTube panel -->
+    <div id="panel-youtube" class="panel">
+      <div class="input-card">
+        <label>YouTube URL</label>
+        <input type="url" id="youtube-input" placeholder="https://www.youtube.com/watch?v=..." />
+        <div class="video-note" style="margin-top:0.75rem;">
+          Fetches the video's auto-generated transcript and summarizes it. Works on most public videos.
         </div>
       </div>
     </div>
 
-    <!-- Video Panel -->
+    <!-- PDF panel -->
+    <div id="panel-pdf" class="panel">
+      <div class="input-card">
+        <label>Upload PDF</label>
+        <div class="upload-zone" id="pdf-upload-zone"
+          onclick="document.getElementById('pdf-input').click()"
+          ondragover="onDragOver(event,'pdf-upload-zone')"
+          ondragleave="onDragLeave('pdf-upload-zone')"
+          ondrop="onDropPdf(event)">
+          <div class="upload-icon">📄</div>
+          <p><strong>Click to upload</strong> or drag & drop</p>
+          <p class="upload-sub">PDF files · up to 20MB</p>
+          <input type="file" id="pdf-input" accept=".pdf,application/pdf" onchange="handlePdf(this.files[0])" />
+        </div>
+        <div class="file-info" id="pdf-file-info">
+          <span>📄</span>
+          <span id="pdf-file-name"></span>
+          <span id="pdf-file-size"></span>
+          <button class="file-remove" onclick="removePdf()">✕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Video panel -->
     <div id="panel-video" class="panel">
       <div class="input-card">
         <label>Upload video file</label>
-
-        <div class="upload-zone" id="upload-zone">
+        <div class="upload-zone" id="upload-zone"
+          onclick="document.getElementById('file-input').click()"
+          ondragover="onDragOver(event,'upload-zone')"
+          ondragleave="onDragLeave('upload-zone')"
+          ondrop="onDropVideo(event)">
           <div class="upload-icon">🎬</div>
           <p><strong>Click to upload</strong> or drag & drop</p>
-          <input type="file" id="file-input" accept="video/*" />
+          <p class="upload-sub">MP4, MOV, AVI, MKV, WebM · up to 500MB</p>
+          <input type="file" id="file-input" accept="video/*" onchange="handleFile(this.files[0])" />
         </div>
-
         <div class="file-info" id="file-info">
           <span>🎬</span>
           <span id="file-name"></span>
           <span id="file-size"></span>
-          <button class="file-remove">✕</button>
+          <button class="file-remove" onclick="removeFile()">✕</button>
         </div>
-
+        <div class="video-note">
+          <strong>Note:</strong> Video summarization uses the filename as context. Full audio transcription requires a server-side pipeline (e.g. Whisper).
+        </div>
       </div>
     </div>
 
     <!-- Options -->
     <div class="options-row">
-      <select id="style-select">
-        <option value="concise">Concise</option>
-        <option value="bullet">Bullet</option>
-      </select>
-
-      <select id="length-select">
-        <option value="short">Short</option>
-        <option value="medium">Medium</option>
-      </select>
+      <div class="option-group">
+        <label>Summary style</label>
+        <select id="style-select">
+          <option value="concise">Concise recap</option>
+          <option value="bullet">Bullet-point summary</option>
+          <option value="detailed">Detailed overview</option>
+          <option value="eli5">Simple explanation (ELI5)</option>
+          <option value="executive">Executive briefing</option>
+          <option value="keypoints">Key takeaways only</option>
+        </select>
+      </div>
+      <div class="option-group">
+        <label>Output length</label>
+        <select id="length-select">
+          <option value="short">Short (1–2 sentences)</option>
+          <option value="medium" selected>Medium (1 paragraph)</option>
+          <option value="long">Long (2–3 paragraphs)</option>
+          <option value="comprehensive">Comprehensive</option>
+        </select>
+      </div>
+      <div class="option-group">
+        <label>Output language</label>
+        <select id="language-select">
+          <option value="English">English</option>
+          <option value="French">Français</option>
+          <option value="Spanish">Español</option>
+          <option value="German">Deutsch</option>
+          <option value="Italian">Italiano</option>
+          <option value="Portuguese">Português</option>
+          <option value="Japanese">日本語</option>
+          <option value="Chinese">中文</option>
+        </select>
+      </div>
     </div>
 
-    <button class="btn-summarize" id="btn-summarize">
+    <button class="btn-summarize" id="btn-summarize" onclick="summarize()">
+      <div class="spinner" id="spinner"></div>
       <span id="btn-text">✦ Summarize now</span>
     </button>
 
-    <div id="error-box"></div>
+    <div class="error-box" id="error-box"></div>
 
-    <div id="result-section">
-      <div id="result-text"></div>
-      <button id="copy-btn">Copy</button>
+    <!-- Result -->
+    <div class="result-section" id="result-section">
+      <div class="result-header">
+        <div class="result-title">
+          ✦ Summary
+          <span class="result-badge" id="reduction-badge"></span>
+        </div>
+        <div class="result-actions">
+          <button class="copy-btn" onclick="copyResult()"><span>⎘</span> Copy</button>
+          <button class="copy-btn" onclick="exportResult('txt')">↓ .txt</button>
+          <button class="copy-btn" onclick="exportResult('md')">↓ .md</button>
+        </div>
+      </div>
+      <div class="result-card">
+        <div class="result-text" id="result-text"></div>
+      </div>
+      <div class="stats-row" id="stats-row"></div>
+
+      <!-- Q&A -->
+      <div class="qa-section">
+        <div class="qa-header">Ask a follow-up question</div>
+        <div class="qa-messages" id="qa-messages"></div>
+        <div class="qa-input-row">
+          <input type="text" id="qa-input" placeholder="e.g. What were the main arguments?" onkeydown="if(event.key==='Enter') askQuestion()" />
+          <button class="qa-send" onclick="askQuestion()">Ask ↗</button>
+        </div>
+      </div>
     </div>
 
   </div>
