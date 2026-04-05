@@ -1,289 +1,102 @@
-/**
- * Briefly — NLP Summarizer
- * Sends prompts to /api/summarize on the Express backend (server.js),
- * which holds the Anthropic API key securely and streams responses back.
- */
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
-// All API calls go through our own backend — no key needed here.
 const API_URL = '/api/summarize';
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
+let currentTab = 'text';
+let selectedFile = null;
+let lastResult = '';
 
-let currentTab     = 'text';
-let selectedFile   = null;
-let lastResult     = '';
+// ---------------- INIT ----------------
+document.addEventListener('DOMContentLoaded', () => {
 
-// ---------------------------------------------------------------------------
-// Tab switching
-// ---------------------------------------------------------------------------
+  // Tabs
+  document.getElementById('tab-text')
+    .addEventListener('click', () => switchTab('text'));
+
+  document.getElementById('tab-video')
+    .addEventListener('click', () => switchTab('video'));
+
+  // Text input
+  document.getElementById('text-input')
+    .addEventListener('input', updateCharCount);
+
+  // Upload zone
+  const uploadZone = document.getElementById('upload-zone');
+
+  uploadZone.addEventListener('click', () => {
+    document.getElementById('file-input').click();
+  });
+
+  uploadZone.addEventListener('dragover', onDragOver);
+  uploadZone.addEventListener('dragleave', onDragLeave);
+  uploadZone.addEventListener('drop', onDrop);
+
+  // File input
+  document.getElementById('file-input')
+    .addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+  // Remove file
+  document.querySelector('.file-remove')
+    .addEventListener('click', removeFile);
+
+  // Summarize button
+  document.getElementById('btn-summarize')
+    .addEventListener('click', summarize);
+
+  // Copy button
+  document.getElementById('copy-btn')
+    .addEventListener('click', copyResult);
+});
+
+// ---------------- FUNCTIONS ----------------
 
 function switchTab(tab) {
   currentTab = tab;
   document.getElementById('panel-text').classList.toggle('active', tab === 'text');
   document.getElementById('panel-video').classList.toggle('active', tab === 'video');
-  document.getElementById('tab-text').classList.toggle('active', tab === 'text');
-  document.getElementById('tab-video').classList.toggle('active', tab === 'video');
-  hideError();
-  document.getElementById('result-section').classList.remove('show');
 }
-
-// ---------------------------------------------------------------------------
-// Character / word counter
-// ---------------------------------------------------------------------------
 
 function updateCharCount() {
-  const text  = document.getElementById('text-input').value;
-  const chars = text.length;
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-  document.getElementById('char-count').textContent = chars.toLocaleString();
-  document.getElementById('word-count').textContent = words.toLocaleString();
+  const text = document.getElementById('text-input').value;
+  document.getElementById('char-count').textContent = text.length;
+  document.getElementById('word-count').textContent =
+    text.trim() ? text.trim().split(/\s+/).length : 0;
 }
-
-// ---------------------------------------------------------------------------
-// Drag-and-drop / file upload
-// ---------------------------------------------------------------------------
 
 function onDragOver(e) {
   e.preventDefault();
-  document.getElementById('upload-zone').classList.add('dragover');
 }
 
-function onDragLeave() {
-  document.getElementById('upload-zone').classList.remove('dragover');
-}
+function onDragLeave() {}
 
 function onDrop(e) {
   e.preventDefault();
-  document.getElementById('upload-zone').classList.remove('dragover');
   const file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith('video/')) {
-    handleFile(file);
-  } else {
-    showError('Please drop a valid video file.');
-  }
+  handleFile(file);
 }
 
 function handleFile(file) {
   if (!file) return;
   selectedFile = file;
   document.getElementById('file-name').textContent = file.name;
-  document.getElementById('file-size').textContent = formatBytes(file.size);
-  document.getElementById('file-info').classList.add('show');
 }
 
 function removeFile() {
   selectedFile = null;
-  document.getElementById('file-input').value = '';
-  document.getElementById('file-info').classList.remove('show');
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatBytes(bytes) {
-  if (bytes < 1024)    return bytes + ' B';
-  if (bytes < 1048576) return Math.round(bytes / 1024) + ' KB';
-  return (bytes / 1048576).toFixed(1) + ' MB';
-}
-
-function showError(msg) {
-  const box = document.getElementById('error-box');
-  box.textContent = msg;
-  box.classList.add('show');
-}
-
-function hideError() {
-  document.getElementById('error-box').classList.remove('show');
-}
-
-function setLoading(loading) {
-  const btn     = document.getElementById('btn-summarize');
-  const spinner = document.getElementById('spinner');
-  const btnText = document.getElementById('btn-text');
-  btn.disabled              = loading;
-  spinner.style.display     = loading ? 'block' : 'none';
-  btnText.textContent       = loading ? 'Analysing…' : '✦ Summarize now';
-}
-
-// ---------------------------------------------------------------------------
-// Prompt builder
-// ---------------------------------------------------------------------------
-
-function buildPrompt(inputText, style, length) {
-  const styleInstructions = {
-    concise:   'Write a concise, flowing prose recap.',
-    bullet:    'Write as a structured bullet-point list with clear, scannable points.',
-    detailed:  'Write a detailed prose overview covering all main themes and arguments.',
-    eli5:      'Explain this as if to someone with no prior knowledge. Use simple language and relatable analogies.',
-    executive: 'Write a professional executive briefing: context, key findings, and implications.',
-    keypoints: 'Extract only the most critical takeaways as a tight numbered list.',
-  };
-
-  const lengthInstructions = {
-    short:         'Keep it to 1–2 sentences maximum.',
-    medium:        'Aim for one solid paragraph (4–6 sentences).',
-    long:          'Write 2–3 paragraphs with good depth.',
-    comprehensive: 'Be comprehensive — cover all significant points thoroughly.',
-  };
-
-  return `You are an expert NLP summarization assistant. Summarize the following content.
-
-Style: ${styleInstructions[style] || styleInstructions.concise}
-Length: ${lengthInstructions[length] || lengthInstructions.medium}
-
-Respond with ONLY the summary — no preamble, no "Here is a summary", no meta-commentary. Just the summary itself.
-
-Content to summarize:
----
-${inputText}
----`;
-}
-
-// ---------------------------------------------------------------------------
-// Main summarize function (streaming)
-// ---------------------------------------------------------------------------
 
 async function summarize() {
-  hideError();
+  const text = document.getElementById('text-input').value;
 
-  const style  = document.getElementById('style-select').value;
-  const length = document.getElementById('length-select').value;
-  let inputText       = '';
-  let originalWordCount = 0;
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: text }),
+  });
 
-  // ── Gather input ──
-  if (currentTab === 'text') {
-    inputText = document.getElementById('text-input').value.trim();
-    if (!inputText) {
-      showError('Please paste some text to summarize.');
-      return;
-    }
-    if (inputText.split(/\s+/).length < 30) {
-      showError('Text is too short. Please paste at least 30 words for a meaningful summary.');
-      return;
-    }
-    originalWordCount = inputText.split(/\s+/).length;
-
-  } else {
-    // Video tab — in a real app you would extract + transcribe the audio here.
-    // For the browser demo we pass a descriptive placeholder.
-    if (!selectedFile) {
-      showError('Please upload a video file first.');
-      return;
-    }
-    inputText = `[Video file: "${selectedFile.name}" (${formatBytes(selectedFile.size)})]
-
-Note: In a production environment the audio track would be extracted and transcribed before being sent here.
-For this browser demo, summarize the content a video with this filename might contain, noting it is an estimate.`;
-    originalWordCount = 500; // assumed average
-  }
-
-  setLoading(true);
-
-  // ── Prepare result area ──
-  const resultSection = document.getElementById('result-section');
-  const resultText    = document.getElementById('result-text');
-  resultSection.classList.add('show');
-  resultText.className   = 'result-text streaming';
-  resultText.textContent = '';
-  document.getElementById('stats-row').innerHTML        = '';
-  document.getElementById('reduction-badge').textContent = '';
-
-  // ── Call backend /api/summarize (SSE streaming) ──
-  try {
-    const response = await fetch(API_URL, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ prompt: buildPrompt(inputText, style, length) }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `Server error ${response.status}`);
-    }
-
-    // ── Read SSE stream ──
-    const reader  = response.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText  = '';
-    let buffer    = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep any incomplete line in the buffer
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6).trim();
-        if (data === '[DONE]') continue;
-
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) throw new Error(parsed.error);
-          if (parsed.text) {
-            fullText               += parsed.text;
-            resultText.textContent  = fullText;
-          }
-        } catch (parseErr) {
-          if (parseErr.message !== 'Unexpected end of JSON input') throw parseErr;
-        }
-      }
-    }
-
-    // ── Finalise ──
-    lastResult           = fullText;
-    resultText.className = 'result-text';
-
-    const summaryWords = fullText.trim().split(/\s+/).length;
-    const reduction    = originalWordCount > 0
-      ? Math.round((1 - summaryWords / originalWordCount) * 100)
-      : 0;
-
-    if (reduction > 0) {
-      document.getElementById('reduction-badge').textContent = reduction + '% shorter';
-    }
-
-    document.getElementById('stats-row').innerHTML = `
-      <span class="stat-chip">📄 ${originalWordCount.toLocaleString()} words in</span>
-      <span class="stat-chip">✦ ${summaryWords} words out</span>
-      <span class="stat-chip">🔤 ${fullText.length.toLocaleString()} chars</span>
-      <span class="stat-chip">📐 ${style}</span>
-    `;
-
-  } catch (err) {
-    resultSection.classList.remove('show');
-    showError('Summarization failed: ' + err.message);
-  } finally {
-    setLoading(false);
-  }
+  const data = await res.json();
+  lastResult = data.text || '';
+  document.getElementById('result-text').textContent = lastResult;
 }
-
-// ---------------------------------------------------------------------------
-// Copy to clipboard
-// ---------------------------------------------------------------------------
 
 function copyResult() {
-  if (!lastResult) return;
-  navigator.clipboard.writeText(lastResult).then(() => {
-    const btn = document.getElementById('copy-btn');
-    btn.innerHTML = '<span>✓</span> Copied!';
-    setTimeout(() => { btn.innerHTML = '<span>⎘</span> Copy'; }, 2000);
-  });
+  navigator.clipboard.writeText(lastResult);
 }
-
-
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('btn-summarize')
-    .addEventListener('click', summarize);
-});
