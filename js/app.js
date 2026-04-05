@@ -281,3 +281,9 @@ function copyResult() {
     setTimeout(() => { btn.innerHTML = '<span>⎘</span> Copy'; }, 2000);
   });
 }
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btn-summarize')
+    .addEventListener('click', summarize);
+});
